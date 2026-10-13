@@ -13,10 +13,8 @@
 
 import React from 'react';
 import { Link } from 'react-router-dom';
-import PageLayout from '../components/layout/PageLayout.jsx';
 import StatCard from '../components/ui/StatCard.jsx';
 import Badge from '../components/ui/Badge.jsx';
-import LoadingSpinner from '../components/ui/LoadingSpinner.jsx';
 import ErrorMessage from '../components/ui/ErrorMessage.jsx';
 import EmptyState from '../components/ui/EmptyState.jsx';
 import { useHealth } from '../hooks/useHealth.js';

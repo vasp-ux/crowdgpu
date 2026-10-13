@@ -22,7 +22,7 @@ import LoadingSpinner from '../components/ui/LoadingSpinner.jsx';
 import ErrorMessage from '../components/ui/ErrorMessage.jsx';
 import EmptyState from '../components/ui/EmptyState.jsx';
 import { usePeers } from '../hooks/usePeers.js';
-import { formatVram, sumVram, timeAgo, formatDateTime } from '../utils/formatters.js';
+import { formatVram, timeAgo, formatDateTime } from '../utils/formatters.js';
 
 // ── Sort options ─────────────────────────────────────────────────────────────
 const SORT_OPTIONS = [
@@ -283,8 +283,6 @@ function ProviderCard({ peer }) {
   const gpuCount    = peer.gpu_capabilities?.length ?? 0;
   const totalVramMb = peer.gpu_capabilities?.reduce((s, g) => s + g.vram_mb, 0) ?? 0;
   const primaryGpu  = peer.gpu_capabilities?.[0];
-
-  const isOnline = peer.status !== 'offline';
 
   return (
     <div

@@ -49,6 +49,34 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     secret_key: str = "changeme-replace-with-a-secure-random-key-in-production"
 
+    # -------------------------------------------------------------------------
+    # Scheduler & Timeouts (Person 1)
+    # -------------------------------------------------------------------------
+    heartbeat_timeout_seconds: int = 30
+    ack_timeout_seconds: int = 60
+    max_job_attempts: int = 3
+    scheduler_weight_vram: float = 0.5
+    scheduler_weight_availability: float = 0.3
+    scheduler_weight_latency: float = 0.2
+
+    # -------------------------------------------------------------------------
+    # Authentication & Development Mode
+    # -------------------------------------------------------------------------
+    dev_mode: bool = False
+    demo_auth_enabled: bool = False
+    demo_user_id: str = "00000000-0000-0000-0000-000000000001"
+    demo_user_email: str = "demo@crowdgpu.local"
+
+    # -------------------------------------------------------------------------
+    # WebRTC / ICE Servers
+    # -------------------------------------------------------------------------
+    stun_servers: list[str] = ["stun:stun.l.google.com:19302"]
+    turn_server: str | None = None
+    turn_username: str | None = None
+    turn_credential: str | None = None
+    turn_realm: str = "crowdgpu.local"
+    turn_secret: str | None = None
+
 
 # Module-level singleton — import this everywhere in the coordinator.
 settings = Settings()

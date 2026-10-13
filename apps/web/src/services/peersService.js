@@ -287,6 +287,17 @@ export async function listPeers() {
  * @returns {Promise<Object>} PeerResponse
  */
 export async function getPeer(peerId) {
+  if (isMockMode()) {
+    await new Promise((r) => setTimeout(r, 150));
+    const peer = MOCK_PEERS.find((p) => p.id === peerId);
+    if (!peer) {
+      const err = new Error(`Peer not found: ${peerId}`);
+      err.status = 404;
+      throw err;
+    }
+    return normalizePeerResponse(peer);
+  }
+
   const data = await apiFetch(`/api/v1/peers/${peerId}`);
   return normalizePeerResponse(data);
 }
@@ -312,10 +323,10 @@ export async function getPeer(peerId) {
 export function normalizePeerResponse(raw) {
   if (!raw || typeof raw !== 'object') return raw;
   return {
-    id:              raw.id              ?? null,
+    id:              raw.id              ?? raw.worker_id    ?? null,
     owner_id:        raw.owner_id        ?? null,
     hostname:        raw.hostname        ?? '(unknown)',
-    status:          raw.status          ?? 'offline',
+    status:          (raw.status         ?? 'offline').toLowerCase(),
     registered_at:   raw.registered_at   ?? null,
     last_seen_at:    raw.last_seen_at    ?? null,
     created_at:      raw.created_at      ?? null,

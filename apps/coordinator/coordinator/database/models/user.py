@@ -29,7 +29,7 @@ class User(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
-        server_default=text("gen_random_uuid()"),
+        server_default=text("(gen_random_uuid())"),
     )
 
     # Unique login / contact email.  NOT the authentication credential.
@@ -51,6 +51,13 @@ class User(TimestampMixin, Base):
     # -------------------------------------------------------------------------
     peers: Mapped[list["Peer"]] = relationship(  # type: ignore[name-defined]  # noqa: F821
         "Peer",
+        back_populates="owner",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    jobs: Mapped[list["Job"]] = relationship(  # type: ignore[name-defined]  # noqa: F821
+        "Job",
         back_populates="owner",
         cascade="all, delete-orphan",
         lazy="selectin",

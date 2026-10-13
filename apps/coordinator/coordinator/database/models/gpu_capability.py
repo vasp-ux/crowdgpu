@@ -30,7 +30,7 @@ class GpuCapability(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
-        server_default=text("gen_random_uuid()"),
+        server_default=text("(gen_random_uuid())"),
     )
 
     # Foreign key to the owning peer.

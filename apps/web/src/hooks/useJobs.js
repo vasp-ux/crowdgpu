@@ -40,9 +40,11 @@ export function useJobs({ pollingInterval } = {}) {
   const intervalRef = useRef(null);
   const reqIdRef    = useRef(0);
 
-  const doFetch = useCallback(async () => {
+  const doFetch = useCallback(async (isBackground = false) => {
     const thisId = ++reqIdRef.current;
-    setLoading(true);
+    if (!isBackground) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const result = await listJobs();
@@ -63,10 +65,12 @@ export function useJobs({ pollingInterval } = {}) {
   useEffect(() => {
     mountedRef.current = true;
 
-    doFetch();
+    doFetch(false);
 
     if (pollingInterval && pollingInterval > 0) {
-      intervalRef.current = setInterval(doFetch, pollingInterval);
+      intervalRef.current = setInterval(() => {
+        doFetch(true);
+      }, pollingInterval);
     }
 
     return () => {
@@ -75,5 +79,5 @@ export function useJobs({ pollingInterval } = {}) {
     };
   }, [doFetch, pollingInterval]);
 
-  return { data, loading, error, refetch: doFetch };
+  return { data, loading, error, refetch: () => doFetch(false) };
 }

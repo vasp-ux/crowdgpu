@@ -34,8 +34,10 @@ export default function JobDetailPage() {
   const [cancelling,  setCancelling]  = useState(false);
   const [cancelError, setCancelError] = useState(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (isBackground = false) => {
+    if (!isBackground) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const result = await getJob(id);
@@ -43,11 +45,29 @@ export default function JobDetailPage() {
     } catch (err) {
       setError(err);
     } finally {
-      setLoading(false);
+      if (!isBackground) {
+        setLoading(false);
+      }
     }
   }, [id]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load(false);
+  }, [load]);
+
+  const jobStatus = job?.status;
+  // Live auto-polling while job is in an active non-terminal state
+  useEffect(() => {
+    if (!jobStatus) return;
+    const terminalStates = ['completed', 'failed', 'cancelled'];
+    if (terminalStates.includes(jobStatus)) return;
+
+    const timer = setInterval(() => {
+      load(true);
+    }, 2000);
+
+    return () => clearInterval(timer);
+  }, [jobStatus, load]);
 
   async function handleCancel() {
     if (!job || cancelling) return;
@@ -215,13 +235,17 @@ function JobTimeline({ job }) {
         const isDone = Boolean(ts);
         const isLast = idx === STAGES.length - 1;
 
-        // For the final stage, check failed vs completed
+        // For the final stage, check failed / cancelled vs completed
         let label = stage.label;
         if (stage.key === 'completed' && job.status === 'failed' && job.completed_at) {
           label = 'Failed';
+        } else if (stage.key === 'completed' && job.status === 'cancelled' && job.completed_at) {
+          label = 'Cancelled';
         } else if (stage.key === 'completed' && job.status === 'completed' && job.completed_at) {
           label = 'Completed';
         }
+
+        const isFailureOrCancel = stage.key === 'completed' && (job.status === 'failed' || job.status === 'cancelled');
 
         return (
           <li key={stage.key} className="flex gap-4 pb-4 last:pb-0">
@@ -230,14 +254,14 @@ function JobTimeline({ job }) {
               <div
                 className={`h-6 w-6 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
                   isDone
-                    ? stage.key === 'completed' && job.status === 'failed'
+                    ? isFailureOrCancel
                       ? 'border-red-600 bg-red-900/40'
                       : 'border-emerald-600 bg-emerald-900/30'
                     : 'border-gray-700 bg-gray-900'
                 }`}
               >
                 {isDone ? (
-                  stage.key === 'completed' && job.status === 'failed' ? (
+                  isFailureOrCancel ? (
                     <svg className="h-3 w-3 text-red-400" viewBox="0 0 12 12" fill="currentColor">
                       <path d="M4 4l4 4M8 4L4 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" fill="none"/>
                     </svg>
@@ -282,23 +306,49 @@ function JobTimeline({ job }) {
 
 function ResultSection({ job }) {
   if (job.status === 'completed' && job.result) {
+    const isObject = typeof job.result === 'object' && job.result !== null;
+    const executionTime = isObject && (job.result.execution_time_s != null ? job.result.execution_time_s : null);
+    const exitCode = isObject && (job.result.exit_code != null ? job.result.exit_code : null);
+    const output = isObject && job.result.output != null ? job.result.output : job.result;
+
     return (
-      <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/20 px-5 py-5">
-        <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide mb-2">
-          Result
-        </p>
-        <p className="text-sm text-emerald-300 leading-relaxed">{job.result}</p>
+      <div className="rounded-xl border border-emerald-900/50 bg-emerald-950/20 px-5 py-5 space-y-3">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <p className="text-xs font-semibold text-emerald-500 uppercase tracking-wide">
+            Execution Result
+          </p>
+          <div className="flex items-center gap-3 text-xs text-emerald-400">
+            {executionTime != null && (
+              <span>Duration: <strong className="font-mono text-emerald-300">{Number(executionTime).toFixed(3)}s</strong></span>
+            )}
+            {exitCode != null && (
+              <span>Exit Code: <strong className="font-mono text-emerald-300">{exitCode}</strong></span>
+            )}
+          </div>
+        </div>
+
+        {isObject ? (
+          <pre className="text-xs font-mono text-emerald-300 bg-gray-950/60 p-3.5 rounded-lg border border-emerald-900/30 overflow-x-auto whitespace-pre-wrap leading-relaxed">
+            {JSON.stringify(output, null, 2)}
+          </pre>
+        ) : (
+          <p className="text-sm text-emerald-300 leading-relaxed font-mono whitespace-pre-wrap">
+            {String(job.result)}
+          </p>
+        )}
       </div>
     );
   }
 
-  if (job.status === 'failed' && job.error) {
+  if ((job.status === 'failed' || job.status === 'cancelled') && job.error) {
     return (
       <div className="rounded-xl border border-red-900/50 bg-red-950/20 px-5 py-5">
         <p className="text-xs font-semibold text-red-500 uppercase tracking-wide mb-2">
-          Error
+          {job.status === 'cancelled' ? 'Cancellation' : 'Error'}
         </p>
-        <p className="text-sm text-red-300 font-mono leading-relaxed">{job.error}</p>
+        <p className="text-sm text-red-300 font-mono leading-relaxed whitespace-pre-wrap">
+          {typeof job.error === 'object' ? JSON.stringify(job.error, null, 2) : String(job.error)}
+        </p>
       </div>
     );
   }
@@ -310,7 +360,7 @@ function ResultSection({ job }) {
         <div>
           <p className="text-sm text-blue-300 font-medium">Executing on provider GPU</p>
           <p className="text-xs text-blue-400/60 mt-0.5">
-            Results will appear here when the job completes.
+            Workload in progress. Live results will appear here as soon as execution completes.
           </p>
         </div>
       </div>

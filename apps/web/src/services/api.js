@@ -34,7 +34,11 @@ const REQUEST_TIMEOUT_MS = 10_000;
  *   err.data    — raw response body, if available
  */
 export async function apiFetch(path, options = {}) {
-  const url = `${getApiBaseUrl()}${path}`;
+  const baseUrl = (getApiBaseUrl() || '').replace(/\/+$/, '');
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const url = `${baseUrl}${cleanPath}`;
+
+  const demoUserId = import.meta.env.VITE_DEMO_USER_ID || '00000000-0000-0000-0000-000000000001';
 
   // ── Timeout via AbortController ──────────────────────────────────────────
   const controller = new AbortController();
@@ -46,6 +50,7 @@ export async function apiFetch(path, options = {}) {
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
+        'X-User-Id': demoUserId,
         ...(options.headers ?? {}),
       },
       ...options,

@@ -10,7 +10,8 @@ All public model classes are re-exported here for convenience.
 """
 
 from coordinator.database.models.gpu_capability import GpuCapability
+from coordinator.database.models.job import Job
 from coordinator.database.models.peer import Peer
 from coordinator.database.models.user import User
 
-__all__ = ["User", "Peer", "GpuCapability"]
+__all__ = ["User", "Peer", "GpuCapability", "Job"]

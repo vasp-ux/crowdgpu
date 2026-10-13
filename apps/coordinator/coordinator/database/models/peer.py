@@ -26,7 +26,7 @@ class Peer(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
         primary_key=True,
-        server_default=text("gen_random_uuid()"),
+        server_default=text("(gen_random_uuid())"),
     )
 
     # Foreign key to the owning user.
@@ -78,6 +78,12 @@ class Peer(TimestampMixin, Base):
         "GpuCapability",
         back_populates="peer",
         cascade="all, delete-orphan",
+        lazy="selectin",
+    )
+
+    jobs: Mapped[list["Job"]] = relationship(  # type: ignore[name-defined]  # noqa: F821
+        "Job",
+        back_populates="assigned_peer",
         lazy="selectin",
     )
 

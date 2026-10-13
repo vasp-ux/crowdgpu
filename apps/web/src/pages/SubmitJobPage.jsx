@@ -17,23 +17,61 @@ import { useNavigate, Link } from 'react-router-dom';
 import PageLayout from '../components/layout/PageLayout.jsx';
 import { createJob } from '../services/jobsService.js';
 
+// ── Workload presets ────────────────────────────────────────────────────────
+const WORKLOAD_PRESETS = [
+  {
+    type: 'matrix_multiply',
+    name: 'Matrix Multiplication (CUDA)',
+    description: 'Runs PyTorch matrix multiplication on GPU with configurable dimension.',
+    defaultCommand: 'matrix_multiply',
+    defaultVram: 512,
+    defaultJobName: 'CUDA Matrix Multiplication',
+  },
+  {
+    type: 'vector_add',
+    name: 'Vector Addition (CUDA)',
+    description: 'Runs element-wise addition of 10M float32 vectors on GPU.',
+    defaultCommand: 'vector_add',
+    defaultVram: 256,
+    defaultJobName: 'CUDA Vector Addition',
+  },
+  {
+    type: 'benchmark',
+    name: 'MatMul Benchmark (CUDA)',
+    description: 'Executes timed synchronized GPU MATMUL loops and computes GFLOPS.',
+    defaultCommand: 'benchmark',
+    defaultVram: 1024,
+    defaultJobName: 'CUDA MatMul Benchmark',
+  },
+  {
+    type: 'docker',
+    name: 'Custom Docker Container',
+    description: 'Runs a container image in an isolated GPU sandbox environment.',
+    defaultCommand: 'python train.py --epochs 10',
+    defaultVram: 2048,
+    defaultJobName: 'Custom Container Job',
+  },
+];
+
 // ── VRAM options ─────────────────────────────────────────────────────────────
 const VRAM_OPTIONS = [
-  { label: '2 GB  — 2,048 MiB',  value: 2048  },
-  { label: '4 GB  — 4,096 MiB',  value: 4096  },
-  { label: '8 GB  — 8,192 MiB',  value: 8192  },
-  { label: '12 GB — 12,288 MiB', value: 12288 },
-  { label: '16 GB — 16,384 MiB', value: 16384 },
-  { label: '24 GB — 24,576 MiB', value: 24576 },
-  { label: '40 GB — 40,960 MiB', value: 40960 },
-  { label: '80 GB — 81,920 MiB', value: 81920 },
+  { label: '256 MiB — Safe Minimal', value: 256 },
+  { label: '512 MiB — Lightweight',    value: 512 },
+  { label: '1 GB  — 1,024 MiB',        value: 1024 },
+  { label: '2 GB  — 2,048 MiB',        value: 2048 },
+  { label: '4 GB  — 4,096 MiB',        value: 4096 },
+  { label: '8 GB  — 8,192 MiB',        value: 8192 },
+  { label: '12 GB — 12,288 MiB',       value: 12288 },
+  { label: '16 GB — 16,384 MiB',       value: 16384 },
+  { label: '24 GB — 24,576 MiB',       value: 24576 },
 ];
 
 const INITIAL_FORM = {
-  name:             '',
+  name:             'CUDA Matrix Multiplication',
+  workload_type:    'matrix_multiply',
   docker_image:     '',
-  command:          '',
-  vram_required_mb: 4096,
+  command:          'matrix_multiply',
+  vram_required_mb: 512,
 };
 
 // ── Validation rules ─────────────────────────────────────────────────────────
@@ -46,14 +84,16 @@ function validate(form) {
     errors.name = 'Job name must be 120 characters or fewer.';
   }
 
-  if (!form.docker_image.trim()) {
-    errors.docker_image = 'Docker image is required.';
-  } else if (!/^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$/.test(form.docker_image.trim())) {
-    errors.docker_image = 'Enter a valid Docker image reference (e.g. pytorch/pytorch:latest).';
+  if (form.workload_type === 'docker') {
+    if (!form.docker_image.trim()) {
+      errors.docker_image = 'Docker image is required for container workloads.';
+    } else if (!/^[a-zA-Z0-9][a-zA-Z0-9._/:@-]*$/.test(form.docker_image.trim())) {
+      errors.docker_image = 'Enter a valid Docker image reference (e.g. pytorch/pytorch:latest).';
+    }
   }
 
   if (!form.command.trim()) {
-    errors.command = 'Command is required.';
+    errors.command = 'Command or workload operation is required.';
   }
 
   const vram = Number(form.vram_required_mb);
@@ -67,16 +107,15 @@ function validate(form) {
 export default function SubmitJobPage() {
   const navigate = useNavigate();
 
-  const [form,       setForm]       = useState(INITIAL_FORM);
-  const [touched,    setTouched]    = useState({});  // tracks which fields have been blurred
-  const [submitting, setSubmitting] = useState(false);
+  const [form,        setForm]        = useState(INITIAL_FORM);
+  const [touched,     setTouched]     = useState({});
+  const [submitting,  setSubmitting]  = useState(false);
   const [submitError, setSubmitError] = useState(null);
-  const [submitted,  setSubmitted]  = useState(false); // guard against double submit
+  const [submitted,   setSubmitted]   = useState(false);
 
   const errors = validate(form);
   const hasErrors = Object.keys(errors).length > 0;
 
-  // Mark field as touched on blur so errors show after interaction
   function handleBlur(e) {
     setTouched((prev) => ({ ...prev, [e.target.name]: true }));
   }
@@ -86,10 +125,23 @@ export default function SubmitJobPage() {
     setForm((prev) => ({ ...prev, [name]: value }));
   }
 
+  function handleWorkloadTypeChange(type) {
+    const preset = WORKLOAD_PRESETS.find((p) => p.type === type);
+    if (!preset) return;
+
+    setForm((prev) => ({
+      ...prev,
+      workload_type:    type,
+      name:             preset.defaultJobName,
+      command:          preset.defaultCommand,
+      vram_required_mb: preset.defaultVram,
+      docker_image:     type === 'docker' ? 'pytorch/pytorch:latest' : '',
+    }));
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
 
-    // Show all field errors on submit attempt
     setTouched({ name: true, docker_image: true, command: true, vram_required_mb: true });
 
     if (hasErrors || submitting || submitted) return;
@@ -99,17 +151,23 @@ export default function SubmitJobPage() {
     setSubmitted(true);
 
     try {
+      const isDocker = form.workload_type === 'docker';
       const job = await createJob({
         name:             form.name.trim(),
-        docker_image:     form.docker_image.trim(),
+        workload_type:    form.workload_type,
+        docker_image:     isDocker ? form.docker_image.trim() : null,
         command:          form.command.trim(),
         vram_required_mb: Number(form.vram_required_mb),
-        workload_type:    'batch',
+        requirements: {
+          workload_type: form.workload_type,
+          required_vram_mb: Number(form.vram_required_mb),
+          ...(isDocker && form.docker_image ? { docker_image: form.docker_image.trim() } : {}),
+        },
       });
       navigate(`/jobs/${job.id}`);
     } catch (err) {
       setSubmitError(err);
-      setSubmitted(false); // allow retry on error
+      setSubmitted(false);
     } finally {
       setSubmitting(false);
     }
@@ -128,6 +186,42 @@ export default function SubmitJobPage() {
       <div className="max-w-2xl">
         <form id="form-submit-job" onSubmit={handleSubmit} noValidate className="space-y-6">
 
+          {/* ── Workload Type Selector ────────────────────────────────────── */}
+          <div>
+            <label className="block text-sm font-medium text-gray-300 mb-2">
+              Workload Type <span className="ml-1 text-red-500 text-xs">*</span>
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {WORKLOAD_PRESETS.map((preset) => {
+                const isSelected = form.workload_type === preset.type;
+                return (
+                  <button
+                    key={preset.type}
+                    type="button"
+                    onClick={() => handleWorkloadTypeChange(preset.type)}
+                    className={`flex flex-col text-left p-3.5 rounded-xl border transition-colors ${
+                      isSelected
+                        ? 'border-brand-500 bg-brand-950/20 ring-1 ring-brand-500/50'
+                        : 'border-gray-800 bg-gray-900/60 hover:bg-gray-800/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between w-full">
+                      <span className={`text-sm font-semibold ${isSelected ? 'text-brand-300' : 'text-white'}`}>
+                        {preset.name}
+                      </span>
+                      {isSelected && (
+                        <span className="h-2 w-2 rounded-full bg-brand-500" />
+                      )}
+                    </div>
+                    <span className="text-xs text-gray-400 mt-1">
+                      {preset.description}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           {/* ── Job Name ─────────────────────────────────────────────────── */}
           <Field
             label="Job Name"
@@ -140,7 +234,7 @@ export default function SubmitJobPage() {
               name="name"
               type="text"
               autoComplete="off"
-              placeholder="e.g. MNIST Training Run"
+              placeholder="e.g. PyTorch Matrix Multiplication"
               value={form.name}
               onChange={handleChange}
               onBlur={handleBlur}
@@ -148,31 +242,37 @@ export default function SubmitJobPage() {
             />
           </Field>
 
-          {/* ── Docker Image ──────────────────────────────────────────────── */}
-          <Field
-            label="Docker Image"
-            htmlFor="job-docker-image"
-            hint="Container image that will be pulled and executed on the provider GPU."
-            error={touched.docker_image ? errors.docker_image : undefined}
-          >
-            <input
-              id="job-docker-image"
-              name="docker_image"
-              type="text"
-              autoComplete="off"
-              placeholder="e.g. pytorch/pytorch:latest"
-              value={form.docker_image}
-              onChange={handleChange}
-              onBlur={handleBlur}
-              className={`${inputCls(touched.docker_image && errors.docker_image)} font-mono`}
-            />
-          </Field>
+          {/* ── Docker Image (only if docker workload) ───────────────────── */}
+          {form.workload_type === 'docker' && (
+            <Field
+              label="Docker Image"
+              htmlFor="job-docker-image"
+              hint="Container image that will be pulled and executed on the provider GPU."
+              error={touched.docker_image ? errors.docker_image : undefined}
+            >
+              <input
+                id="job-docker-image"
+                name="docker_image"
+                type="text"
+                autoComplete="off"
+                placeholder="e.g. pytorch/pytorch:latest"
+                value={form.docker_image}
+                onChange={handleChange}
+                onBlur={handleBlur}
+                className={`${inputCls(touched.docker_image && errors.docker_image)} font-mono`}
+              />
+            </Field>
+          )}
 
           {/* ── Command ───────────────────────────────────────────────────── */}
           <Field
-            label="Command"
+            label="Workload Command / Target"
             htmlFor="job-command"
-            hint="Entrypoint command to run inside the container."
+            hint={
+              form.workload_type === 'docker'
+                ? 'Entrypoint command to execute inside the container.'
+                : 'Built-in CUDA execution routine.'
+            }
             error={touched.command ? errors.command : undefined}
           >
             <input
@@ -180,7 +280,7 @@ export default function SubmitJobPage() {
               name="command"
               type="text"
               autoComplete="off"
-              placeholder="e.g. python train.py --epochs 10"
+              placeholder="e.g. matrix_multiply"
               value={form.command}
               onChange={handleChange}
               onBlur={handleBlur}
@@ -192,7 +292,7 @@ export default function SubmitJobPage() {
           <Field
             label="Minimum VRAM Required"
             htmlFor="job-vram"
-            hint="The scheduler will only assign peers with at least this much GPU memory."
+            hint="The scheduler will match provider peers having at least this much GPU memory."
             error={touched.vram_required_mb ? errors.vram_required_mb : undefined}
           >
             <select
@@ -210,10 +310,9 @@ export default function SubmitJobPage() {
           </Field>
 
           {/* ── Auth notice ───────────────────────────────────────────────── */}
-          <div className="rounded-lg border border-amber-900/40 bg-amber-950/20 px-4 py-3">
-            <p className="text-xs text-amber-500">
-              <strong>Note:</strong> Authentication is not yet implemented.
-              Jobs are submitted without an owner until the auth system is in place.
+          <div className="rounded-lg border border-brand-900/40 bg-brand-950/20 px-4 py-3">
+            <p className="text-xs text-brand-300">
+              <strong>Execution Target:</strong> Workloads are assigned by the Coordinator scheduler to matching active GPU workers.
             </p>
           </div>
 

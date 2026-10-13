@@ -46,12 +46,12 @@ class TestMigrationChain:
         heads = script.get_heads()
         assert len(heads) >= 1, "Expected at least one migration head"
 
-    def test_initial_migration_is_head(self) -> None:
-        """The initial migration (0001) is the current head."""
+    def test_migration_head_is_latest(self) -> None:
+        """The latest migration (0002) is the current head."""
         cfg = get_alembic_config()
         script = ScriptDirectory.from_config(cfg)
         heads = script.get_heads()
-        assert "0001" in heads, f"Expected '0001' in heads, got: {heads}"
+        assert "0002" in heads, f"Expected '0002' in heads, got: {heads}"
 
     def test_no_revision_gaps(self) -> None:
         """Every revision in the chain is reachable from the head (no orphans)."""
@@ -104,3 +104,18 @@ class TestMigrationChain:
             assert table in source, (
                 f"Expected table name {table!r} in migration 0001 source"
             )
+
+    def test_jobs_migration_targets_correct_tables(self) -> None:
+        """The jobs migration module (0002) references the jobs table."""
+        import inspect
+
+        from alembic.script import ScriptDirectory
+
+        cfg = get_alembic_config()
+        script = ScriptDirectory.from_config(cfg)
+        rev = script.get_revision("0002")
+        assert rev is not None
+        assert rev.down_revision == "0001"
+
+        source = inspect.getsource(rev.module)
+        assert "jobs" in source, "Expected table name 'jobs' in migration 0002 source"

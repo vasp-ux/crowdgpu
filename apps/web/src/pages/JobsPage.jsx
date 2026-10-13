@@ -21,7 +21,7 @@ import { useJobs } from '../hooks/useJobs.js';
 import { formatVram, timeAgo } from '../utils/formatters.js';
 
 // ── Filter / sort config ─────────────────────────────────────────────────────
-const STATUS_FILTERS = ['all', 'queued', 'matching', 'assigned', 'running', 'completed', 'failed'];
+const STATUS_FILTERS = ['all', 'queued', 'matching', 'assigned', 'running', 'completed', 'failed', 'cancelled'];
 
 const SORT_OPTIONS = [
   { value: 'newest',  label: 'Newest'        },
@@ -32,7 +32,7 @@ const SORT_OPTIONS = [
 ];
 
 // Status sort order
-const STATUS_ORDER = { queued: 0, matching: 1, assigned: 2, running: 3, completed: 4, failed: 5 };
+const STATUS_ORDER = { queued: 0, matching: 1, assigned: 2, running: 3, completed: 4, failed: 5, cancelled: 6 };
 
 export default function JobsPage() {
   const { data: jobs, loading, error, refetch } = useJobs();
@@ -237,7 +237,7 @@ export default function JobsPage() {
                   <div className="min-w-0">
                     <p className="text-sm text-white font-medium truncate">{job.name}</p>
                     <p className="text-xs text-gray-500 font-mono truncate mt-0.5">
-                      {job.docker_image}
+                      {job.docker_image || job.workload_type || job.command || '—'}
                     </p>
                   </div>
                   <span className="text-xs text-gray-400 whitespace-nowrap">
@@ -268,7 +268,9 @@ export default function JobsPage() {
                   <p className="text-sm font-medium text-white leading-snug">{job.name}</p>
                   <Badge status={job.status} className="flex-shrink-0" />
                 </div>
-                <p className="text-xs text-gray-500 font-mono truncate mb-2">{job.docker_image}</p>
+                <p className="text-xs text-gray-500 font-mono truncate mb-2">
+                  {job.docker_image || job.workload_type || job.command || '—'}
+                </p>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
                   <span>{formatVram(job.vram_required_mb)} VRAM</span>
                   {job.peer_hostname && <span>{job.peer_hostname}</span>}

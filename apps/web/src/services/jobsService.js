@@ -281,18 +281,12 @@ export async function listJobs() {
       .map(normalizeJobResponse);
   }
 
-  // Real mode: coordinator job API not yet implemented.
-  throw Object.assign(
-    new Error('Job API is not yet available. Enable VITE_USE_MOCK=true to use demo data.'),
-    { status: 501 }
-  );
+  const data = await apiFetch('/api/v1/jobs');
+  return Array.isArray(data) ? data.map(normalizeJobResponse) : [];
 }
 
 /**
- * [MOCK] Get a single job by ID.
- *
- * Backend integration:
- *   Replace with: return apiFetch(`/api/v1/jobs/${jobId}`);
+ * Get a single job by ID.
  *
  * @param {string} jobId
  * @returns {Promise<object>}
@@ -310,23 +304,14 @@ export async function getJob(jobId) {
     return normalizeJobResponse({ ...job });
   }
 
-  throw Object.assign(
-    new Error('Job API is not yet available. Enable VITE_USE_MOCK=true to use demo data.'),
-    { status: 501 }
-  );
+  const data = await apiFetch(`/api/v1/jobs/${jobId}`);
+  return normalizeJobResponse(data);
 }
 
 /**
- * [MOCK] Create (submit) a new job.
+ * Create (submit) a new job.
  *
- * Backend integration:
- *   Replace with:
- *   return apiFetch('/api/v1/jobs', {
- *     method: 'POST',
- *     body: JSON.stringify(payload),
- *   });
- *
- * @param {{ name, docker_image, command, vram_required_mb, workload_type? }} payload
+ * @param {{ name, docker_image, command, vram_required_mb, workload_type?, requirements? }} payload
  * @returns {Promise<object>}
  */
 export async function createJob(payload) {
@@ -357,18 +342,34 @@ export async function createJob(payload) {
     return normalizeJobResponse({ ...newJob });
   }
 
-  throw Object.assign(
-    new Error('Job API is not yet available. Enable VITE_USE_MOCK=true to use demo data.'),
-    { status: 501 }
-  );
+  const vramMb = Number(payload.vram_required_mb || payload.required_vram_mb || 0);
+  const workloadType = payload.workload_type || 'batch';
+  const dockerImage = payload.docker_image?.trim() || null;
+  const command = payload.command?.trim() || workloadType;
+
+  const body = {
+    name: payload.name?.trim() || 'Unnamed Job',
+    command,
+    required_vram_mb: vramMb,
+    vram_required_mb: vramMb,
+    workload_type: workloadType,
+    docker_image: dockerImage,
+    requirements: payload.requirements || {
+      workload_type: workloadType,
+      required_vram_mb: vramMb,
+      ...(dockerImage ? { docker_image: dockerImage } : {}),
+    },
+  };
+
+  const data = await apiFetch('/api/v1/jobs', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+  return normalizeJobResponse(data);
 }
 
 /**
- * [MOCK] Cancel a queued or running job.
- *
- * Backend integration:
- *   Replace with:
- *   return apiFetch(`/api/v1/jobs/${jobId}/cancel`, { method: 'POST' });
+ * Cancel a queued or running job.
  *
  * @param {string} jobId
  * @returns {Promise<object>} Updated job
@@ -401,10 +402,10 @@ export async function cancelJob(jobId) {
     return normalizeJobResponse({ ...updated });
   }
 
-  throw Object.assign(
-    new Error('Job API is not yet available. Enable VITE_USE_MOCK=true to use demo data.'),
-    { status: 501 }
-  );
+  const data = await apiFetch(`/api/v1/jobs/${jobId}/cancel`, {
+    method: 'POST',
+  });
+  return normalizeJobResponse(data);
 }
 
 // ---------------------------------------------------------------------------
@@ -412,35 +413,37 @@ export async function cancelJob(jobId) {
 // ---------------------------------------------------------------------------
 
 /**
- * Normalise a raw job object (from mock or future API) into the frontend model.
+ * Normalise a raw job object (from mock or API) into the frontend model.
  *
  * Rules:
  *   - Known fields: mapped directly
  *   - Missing fields: null (never fabricated)
- *   - Do NOT add status progress, percentage, or telemetry fields
- *
- * When the backend schema is finalised, update field mappings here.
- * Pages and hooks do not need to change.
+ *   - Status is normalized to lowercase for badge consistency
  *
  * @param {object} raw
  * @returns {object}
  */
 export function normalizeJobResponse(raw) {
   if (!raw || typeof raw !== 'object') return raw;
+  const reqs = raw.requirements || {};
   return {
     id:               raw.id               ?? null,
     name:             raw.name             ?? '(unknown)',
-    status:           raw.status           ?? 'queued',
-    workload_type:    raw.workload_type    ?? 'batch',
-    docker_image:     raw.docker_image     ?? null,
+    status:           (raw.status          ?? 'queued').toLowerCase(),
+    workload_type:    raw.workload_type    ?? reqs.workload_type ?? 'batch',
+    docker_image:     raw.docker_image     ?? reqs.docker_image  ?? null,
     command:          raw.command          ?? null,
-    vram_required_mb: typeof raw.vram_required_mb === 'number' ? raw.vram_required_mb : null,
-    submitted_at:     raw.submitted_at     ?? null,
+    vram_required_mb: typeof raw.vram_required_mb === 'number'
+      ? raw.vram_required_mb
+      : (typeof raw.required_vram_mb === 'number'
+          ? raw.required_vram_mb
+          : (typeof reqs.required_vram_mb === 'number' ? reqs.required_vram_mb : null)),
+    submitted_at:     raw.submitted_at     ?? raw.created_at     ?? null,
     matching_at:      raw.matching_at      ?? null,
     assigned_at:      raw.assigned_at      ?? null,
     started_at:       raw.started_at       ?? null,
     completed_at:     raw.completed_at     ?? null,
-    peer_id:          raw.peer_id          ?? null,
+    peer_id:          raw.peer_id          ?? raw.assigned_peer_id ?? null,
     peer_hostname:    raw.peer_hostname    ?? null,
     gpu_name:         raw.gpu_name         ?? null,
     result:           raw.result           ?? null,

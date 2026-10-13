@@ -57,6 +57,22 @@ async def register_peer(
 
 
 @router.get(
+    "",
+    response_model=list[PeerResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List all provider peers",
+)
+async def list_peers(
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[PeerResponse]:
+    """
+    Retrieve all registered provider peer nodes and their GPU capabilities.
+    """
+    peers = await PeerService.list_peers(db)
+    return [PeerResponse.model_validate(peer) for peer in peers]
+
+
+@router.get(
     "/{peer_id}",
     response_model=PeerResponse,
     status_code=status.HTTP_200_OK,

@@ -1,1 +1,1 @@
-"""Worker test package."""
+"""CrowdGPU Worker tests."""

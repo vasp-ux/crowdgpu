@@ -36,10 +36,48 @@ class PeerService:
         # Verify owner existence
         owner = await session.get(User, data.owner_id)
         if owner is None:
-            raise OwnerNotFoundError(data.owner_id)
+            from coordinator.config import settings
+
+            if str(data.owner_id) == settings.demo_user_id:
+                owner = User(
+                    id=data.owner_id,
+                    email=settings.demo_user_email,
+                    display_name="Demo User",
+                )
+                session.add(owner)
+                await session.flush()
+            else:
+                raise OwnerNotFoundError(data.owner_id)
 
         now = datetime.datetime.now(datetime.UTC)
-        peer_id = uuid.uuid4()
+        peer_id = None
+        if getattr(data, "worker_id", None):
+            try:
+                peer_id = uuid.UUID(str(data.worker_id))
+            except ValueError:
+                peer_id = uuid.uuid5(uuid.NAMESPACE_DNS, str(data.worker_id))
+        if not peer_id:
+            peer_id = uuid.uuid4()
+
+        existing_peer = await session.get(Peer, peer_id)
+        if existing_peer is not None:
+            existing_peer.hostname = data.hostname
+            existing_peer.status = data.initial_status.value
+            existing_peer.last_seen_at = now
+            existing_peer.gpu_capabilities.clear()
+            for cap_data in data.gpu_capabilities:
+                gpu = GpuCapability(
+                    id=uuid.uuid4(),
+                    peer_id=peer_id,
+                    gpu_name=cap_data.gpu_name,
+                    vram_mb=cap_data.vram_mb,
+                    driver_version=cap_data.driver_version,
+                    cuda_version=cap_data.cuda_version,
+                    compute_capability=cap_data.compute_capability,
+                )
+                existing_peer.gpu_capabilities.append(gpu)
+            await session.commit()
+            return await PeerService.get_peer(session, peer_id)
 
         peer = Peer(
             id=peer_id,
@@ -94,6 +132,21 @@ class PeerService:
             raise PeerNotFoundError(peer_id)
 
         return peer
+
+    @staticmethod
+    async def list_peers(
+        session: AsyncSession,
+    ) -> list[Peer]:
+        """
+        Retrieve all peers including their registered GPU capabilities.
+        """
+        stmt = (
+            select(Peer)
+            .options(selectinload(Peer.gpu_capabilities))
+            .order_by(Peer.created_at.desc())
+        )
+        result = await session.execute(stmt)
+        return list(result.scalars().all())
 
     @staticmethod
     async def heartbeat(

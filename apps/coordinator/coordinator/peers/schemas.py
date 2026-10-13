@@ -8,8 +8,9 @@ heartbeat, peer status, and GPU hardware capabilities.
 import datetime
 import uuid
 from enum import StrEnum
+from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class PeerStatus(StrEnum):
@@ -96,6 +97,34 @@ class PeerRegisterRequest(BaseModel):
         min_length=1,
         description="List of GPU devices exposed by this peer (at least one required)",
     )
+    worker_id: str | None = Field(
+        default=None,
+        description="Optional worker identifier alias (Person 2 worker)",
+    )
+
+    model_config = ConfigDict(extra="allow")
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_worker_registration(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            # Worker format (Person 2): flat gpu fields instead of gpu_capabilities array
+            if "gpu_name" in data and "gpu_capabilities" not in data:
+                vram = data.get("total_vram_mib") or data.get("vram_mb") or 8192
+                gpu_cap = {
+                    "gpu_name": data.get("gpu_name", "NVIDIA GPU"),
+                    "vram_mb": int(vram),
+                    "driver_version": data.get("driver_version"),
+                    "cuda_version": data.get("cuda_version"),
+                    "compute_capability": data.get("compute_capability"),
+                }
+                data["gpu_capabilities"] = [gpu_cap]
+                if "hostname" not in data:
+                    data["hostname"] = data.get("worker_id") or "worker-node"
+                if "owner_id" not in data:
+                    from coordinator.config import settings
+                    data["owner_id"] = uuid.UUID(settings.demo_user_id)
+        return data
 
 
 class PeerHeartbeatRequest(BaseModel):
@@ -105,6 +134,30 @@ class PeerHeartbeatRequest(BaseModel):
         default=None,
         description="Optional status update (e.g. 'available', 'busy')",
     )
+    state: str | None = Field(
+        default=None,
+        description="Worker state alias (e.g. 'AVAILABLE', 'BUSY')",
+    )
+    current_job_id: str | None = Field(
+        default=None,
+        description="Current active job ID if worker is executing",
+    )
+    gpu_telemetry: dict[str, Any] | None = Field(
+        default=None,
+        description="Optional GPU telemetry metrics reported by worker",
+    )
+
+    model_config = ConfigDict(extra="allow")
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_heartbeat(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if "status" not in data and "state" in data:
+                raw_state = data.get("state")
+                if raw_state:
+                    data["status"] = raw_state.lower()
+        return data
 
 
 class PeerResponse(BaseModel):
@@ -119,5 +172,33 @@ class PeerResponse(BaseModel):
     created_at: datetime.datetime
     updated_at: datetime.datetime
     gpu_capabilities: list[GpuCapabilityResponse] = []
+    registered: bool = True
+    worker_id: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_peer_computed(cls, data: Any) -> Any:
+        if hasattr(data, "__dict__"):
+            peer_id = getattr(data, "id", None)
+            return {
+                "id": peer_id,
+                "owner_id": getattr(data, "owner_id", None),
+                "hostname": getattr(data, "hostname", None),
+                "status": getattr(data, "status", None),
+                "registered_at": getattr(data, "registered_at", None),
+                "last_seen_at": getattr(data, "last_seen_at", None),
+                "created_at": getattr(data, "created_at", None),
+                "updated_at": getattr(data, "updated_at", None),
+                "gpu_capabilities": getattr(data, "gpu_capabilities", []),
+                "registered": True,
+                "worker_id": str(peer_id) if peer_id else None,
+            }
+        elif isinstance(data, dict):
+            peer_id = data.get("id")
+            if "registered" not in data:
+                data["registered"] = True
+            if "worker_id" not in data and peer_id:
+                data["worker_id"] = str(peer_id)
+        return data
